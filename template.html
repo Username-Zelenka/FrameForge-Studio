@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<!-- ИСТОЧНИК-ШАБЛОН. Открывать нужно index.html — он собран из этого файла,
+     styles.css и js/*.js командой `node build.js` и полностью автономен. -->
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111315">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>FrameForge Studio — браузерный видеоредактор</title>
+<!--INLINE_CSS-->
+</head>
+<body>
+<!-- Мобильная (портретная) раскладка включается только на узких/сенсорных экранах.
+     Раньше класс был прописан в разметке жёстко, и на компьютере редактор
+     открывался в «телефонной» колонке шириной 700 px. -->
+<script>
+(function () {
+  var q = window.matchMedia('(max-width:820px), (pointer:coarse) and (max-width:1100px)');
+  function sync() { document.body.classList.toggle('portrait-mode', q.matches); }
+  sync();
+  if (q.addEventListener) q.addEventListener('change', sync); else if (q.addListener) q.addListener(sync);
+})();
+</script>
+<noscript><div style="position:fixed;inset:0;z-index:30000;background:#1b1b1e;color:#e8e8ee;display:grid;place-items:center;font:16px system-ui;text-align:center;padding:24px">Для работы редактора включите JavaScript в настройках браузера.</div></noscript>
+
+<!-- Если что-то пойдёт не так, покажем ошибку прямо в интерфейсе, а не «ничего не работает». -->
+<div id="bootError" class="boot-error hidden"></div>
+<script>
+(function () {
+  var shown = 0;
+  function report(msg) {
+    var box = document.getElementById('bootError');
+    if (!box || shown > 3) return;
+    shown++;
+    box.classList.remove('hidden');
+    box.appendChild(document.createTextNode((box.childNodes.length ? ' · ' : 'Ошибка: ') + String(msg).slice(0, 260)));
+  }
+  window.addEventListener('error', function (e) {
+    if (e && e.target && (e.target.tagName === 'SCRIPT' || e.target.tagName === 'LINK')) {
+      report('не загрузился ' + (e.target.src || e.target.href));
+    } else if (e && e.message) report(e.message);
+  }, true);
+  window.addEventListener('unhandledrejection', function (e) { report('Promise: ' + (e.reason && e.reason.message || e.reason)); });
+})();
+</script>
+
+<!-- ============================ SVG ICON SPRITE ============================ -->
+<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5 19 12 7 19.5Z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 5h3.4v14H7zM13.6 5H17v14h-3.4z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-step-back" viewBox="0 0 24 24"><path d="M6 5v14M18 6l-9 6 9 6z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-step-fwd" viewBox="0 0 24 24"><path d="M18 5v14M6 6l9 6-9 6z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-start" viewBox="0 0 24 24"><path d="M5 5v14M19 6l-9 6 9 6z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-end" viewBox="0 0 24 24"><path d="M19 5v14M5 6l9 6-9 6z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-loop" viewBox="0 0 24 24"><path d="M4 11a7 7 0 0 1 7-7h6m0 0-2.5-2.5M17 4l-2.5 2.5M20 13a7 7 0 0 1-7 7H7m0 0 2.5 2.5M7 20l2.5-2.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-in" viewBox="0 0 24 24"><path d="M7 5v14M10 7h7l-3.5 5L17 17h-7z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><path d="M17 5v14M14 7H7l3.5 5L7 17h7z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+  <symbol id="i-insert" viewBox="0 0 24 24"><path d="M5 6v12M9 12h10m-3.5-3.5L19 12l-3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-overwrite" viewBox="0 0 24 24"><path d="M5 6v12M9 8h8v8H9z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+  <symbol id="i-razor" viewBox="0 0 24 24"><circle cx="7" cy="17" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="16" cy="17" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M9.3 15 19 4M13.4 14.8 5.5 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+  <symbol id="i-select" viewBox="0 0 24 24"><path d="m5 3 13 9-6 1-3 6z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+  <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 12V6.5a1.3 1.3 0 0 1 2.6 0V11m0-5.5a1.3 1.3 0 0 1 2.6 0V11m0-4.5a1.3 1.3 0 0 1 2.6 0V12m0-3.5a1.3 1.3 0 0 1 2.6 0V15a6 6 0 0 1-6 6h-1a6 6 0 0 1-5-2.7L3 14.5a1.4 1.4 0 0 1 2.3-1.6L8 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-zoom-in" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M15.5 15.5 21 21M10.5 7.5v6M7.5 10.5h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-zoom-out" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M15.5 15.5 21 21M7.5 10.5h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-magnet" viewBox="0 0 24 24"><path d="M6 4v8a6 6 0 0 0 12 0V4h-4v8a2 2 0 0 1-4 0V4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M6 8h4M14 8h4" stroke="currentColor" stroke-width="1.7"/></symbol>
+  <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><rect x="8" y="8" width="8" height="8" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+  <symbol id="i-export" viewBox="0 0 24 24"><path d="M12 3v12m0-12L8 7m4-4 4 4M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M4 4h13l3 3v13H4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M8 4v6h8V4M8 20v-6h8v6" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v11H3z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+  <symbol id="i-import" viewBox="0 0 24 24"><path d="M12 15V3m0 12L8 11m4 4 4-4M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 8H5V4M5.5 8A8 8 0 1 1 5 15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24"><path d="M15 8h4V4M18.5 8A8 8 0 1 0 19 15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-volume" viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4zM17 9a4 4 0 0 1 0 6M19.5 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-mute" viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4zM17 9l5 6M22 9l-5 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+  <symbol id="i-unlock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8 10V7a4 4 0 0 1 7.7-1.5" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="2.6" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+  <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M3 3l18 18M9.5 6.4A10 10 0 0 1 12 6c6 0 10 6 10 6a16 16 0 0 1-3.3 3.8M6.2 8.2C3.6 9.8 2 12 2 12s4 6 10 6c1.1 0 2.1-.2 3-.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m15.5 15.5 5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-fx" viewBox="0 0 24 24"><path d="M3 6h12M3 12h9M3 18h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="m15 10 6 8M21 10l-6 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5zM3 13l9 5 9-5M3 17l9 5 9-5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+  <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><ellipse cx="6" cy="18" rx="3" ry="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><ellipse cx="17" cy="16" rx="3" ry="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="8.5" cy="9" r="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m4 18 5-5 3.5 3.5L16 13l4 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+  <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 6V4h16v2M12 4v16M9 20h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-color" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1.5" fill="currentColor" opacity=".65"/><path d="M3 4h18v16H3z" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+  <symbol id="i-marker" viewBox="0 0 24 24"><path d="M6 3h12l-2.5 4L18 11H6l2.5-4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 11v10" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><path d="M3 9h18M3 15h18M9 3v18M15 3v18" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="3" y="3" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+  <symbol id="i-fullscreen" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+  <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M6 10h1M10 10h1M14 10h1M18 10h1M6 13h1M10 13h1M14 13h1M18 13h1M8 16h8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 11v6M12 7.5v.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="m5 5 14 14M19 5 5 19" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a4 4 0 0 0 5.7 0l2.6-2.6a4 4 0 1 0-5.7-5.7L11 6.3M14 11a4 4 0 0 0-5.7 0l-2.6 2.6a4 4 0 1 0 5.7 5.7l1.6-1.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.7" fill="currentColor"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/><circle cx="19" cy="12" r="1.7" fill="currentColor"/></symbol>
+  <symbol id="i-wave" viewBox="0 0 24 24"><path d="M2 12h2l2-6 3 13 3-16 3 18 3-11 2 4h2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-scissors" viewBox="0 0 24 24"><circle cx="6" cy="17" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="16" cy="17" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8.2 15.4 18 4M13.7 15.2 4.5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+  <symbol id="i-diamond" viewBox="0 0 24 24"><path d="m12 4 8 8-8 8-8-8z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-diamond-o" viewBox="0 0 24 24"><path d="m12 4 8 8-8 8-8-8z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+  <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.5-5.8M4 4v4h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m4 12 5 5L20 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-speed" viewBox="0 0 24 24"><path d="M4 17a9 9 0 1 1 16 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="m12 13 5-5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><circle cx="12" cy="14" r="1.6" fill="currentColor"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="15" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="9" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+  <symbol id="i-add-track" viewBox="0 0 24 24"><path d="M3 6h18M3 12h12M3 18h12M18 15v6M15 18h6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+  <symbol id="i-record" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" fill="#e0483f" stroke="none"/></symbol>
+  <symbol id="i-solo" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 5v8" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-cards" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="13" y="3" width="8" height="8" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="3" y="13" width="8" height="8" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="13" y="13" width="8" height="8" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+</svg>
+
+<div id="app">
+
+  <!-- ================================ TOP BAR ================================ -->
+  <header class="topbar">
+    <div class="brand" title="FrameForge Studio">
+      <span class="brand-mark">F<span>F</span></span>
+      <span class="brand-text">FrameForge <b>Studio</b></span>
+    </div>
+    <nav class="menubar" id="menuBar"></nav>
+    <div class="workspace-tabs" id="workspaceTabs"></div>
+    <div class="top-actions">
+      <span class="project-label" id="projectLabel">Без имени.prproj</span>
+      <button class="tbtn anim-launch" id="animationBtn" title="Студия анимации"><svg class="icon"><use href="#i-layers"/></svg><span>Анимация</span></button>
+      <button class="tbtn" id="cmdBtn" title="Команды и возможности (Ctrl+Shift+K)"><svg class="icon"><use href="#i-search"/></svg></button>
+      <button class="tbtn" id="projectsBtn" title="Все проекты (стартовое окно)"><svg class="icon"><use href="#i-cards"/></svg></button>
+      <button class="tbtn mobile-only" id="mobileMenuBtn" title="Меню"><svg class="icon"><use href="#i-more"/></svg></button>
+      <button class="tbtn mobile-only" id="mobileImportBtn" title="Импорт медиа"><svg class="icon"><use href="#i-import"/></svg></button>
+      <button class="tbtn desktop-only" id="undoBtn" title="Отменить (Ctrl+Z)"><svg class="icon"><use href="#i-undo"/></svg></button>
+      <button class="tbtn desktop-only" id="redoBtn" title="Повторить (Ctrl+Shift+Z)"><svg class="icon"><use href="#i-redo"/></svg></button>
+      <button class="tbtn desktop-only" id="saveBtn" title="Сохранить проект (Ctrl+S)"><svg class="icon"><use href="#i-save"/></svg></button>
+      <button class="tbtn accent" id="exportBtn"><svg class="icon"><use href="#i-export"/></svg><span>Экспорт</span></button>
+    </div>
+  </header>
+
+  <!-- ============================ MOBILE SEGMENTS ============================ -->
+  <div class="mobile-segments" id="mobileSegments">
+    <div class="seg-group" id="segMonitor">
+      <button data-panel="program" class="active">Программа</button>
+      <button data-panel="source">Исходный материал</button>
+    </div>
+    <div class="seg-group hidden" id="segFx">
+      <button data-panel="effects" class="active">Библиотека эффектов</button>
+      <button data-panel="controls">Настройки клипа</button>
+    </div>
+    <div class="seg-hint" id="segHint"></div>
+  </div>
+
+  <!-- ================================ WORKSPACE ================================ -->
+  <main class="workspace" id="workspace">
+
+    <!-- ---------- LEFT STACK: PROJECT + TABS ---------- -->
+    <section class="left-stack" id="leftStack">
+      <div class="panel project-panel" id="projectPanel">
+        <div class="panel-head">
+          <div class="panel-tabs" data-tabs="projectHead">
+            <button class="ptab active" data-tab="project">Проект</button>
+            <button class="ptab" data-tab="mediabrowser">Медиа-браузер</button>
+          </div>
+          <div class="panel-actions">
+            <button class="icon-btn" id="viewListBtn" title="Список"><svg class="icon"><use href="#i-list"/></svg></button>
+            <button class="icon-btn" id="viewGridBtn" title="Значки"><svg class="icon"><use href="#i-cards"/></svg></button>
+            <button class="icon-btn" id="newItemBtn" title="Новый элемент"><svg class="icon"><use href="#i-plus"/></svg></button>
+            <button class="icon-btn" data-menu="panel" title="Меню панели"><svg class="icon"><use href="#i-more"/></svg></button>
+          </div>
+        </div>
+        <div class="panel-subhead">
+          <label class="search-box"><svg class="icon"><use href="#i-search"/></svg><input id="mediaSearch" placeholder="Поиск медиа" spellcheck="false"></label>
+        </div>
+        <div class="panel-body scroll" id="mediaList"></div>
+        <div class="panel-foot">
+          <button class="btn small" id="importBtn"><svg class="icon"><use href="#i-import"/></svg> Импорт</button>
+          <span id="mediaCount">0 элементов</span>
+        </div>
+      </div>
+      <div class="splitter h" id="leftSplitter"></div>
+      <div class="panel left-tabs-panel" id="leftTabsPanel">
+        <div class="panel-head">
+          <div class="panel-tabs" id="leftTabs">
+            <button class="ptab active" data-ltab="effects">Эффекты</button>
+            <button class="ptab" data-ltab="markers">Маркеры</button>
+            <button class="ptab" data-ltab="history">История</button>
+            <button class="ptab" data-ltab="mixer">Микшер</button>
+            <button class="ptab" data-ltab="color">Цвет</button>
+            <button class="ptab" data-ltab="sound">Звук</button>
+            <button class="ptab" data-ltab="browser">Обзор</button>
+            <button class="ptab" data-ltab="graphics">Графика</button>
+            <button class="ptab" data-ltab="export">Экспорт</button>
+          </div>
+        </div>
+        <div class="panel-subhead" id="leftTabSubhead">
+          <label class="search-box"><svg class="icon"><use href="#i-search"/></svg><input id="effectSearch" placeholder="Поиск эффектов" spellcheck="false"></label>
+        </div>
+        <div class="panel-body scroll" id="effectsList"></div>
+        <div class="panel-body scroll hidden" id="markersList"></div>
+        <div class="panel-body scroll" id="historyList" style="display:none"></div>
+        <div class="panel-body scroll" id="mixerList" style="display:none"></div>
+        <div class="panel-body scroll hidden" id="colorPanel"></div>
+        <div class="panel-body scroll hidden" id="soundPanel"></div>
+        <div class="panel-body scroll hidden" id="browserPanel"></div>
+        <div class="panel-body scroll hidden" id="graphicsPanel"></div>
+        <div class="panel-body scroll hidden" id="exportPanel"></div>
+      </div>
+    </section>
+
+    <!-- ---------- SOURCE MONITOR ---------- -->
+    <section class="panel monitor-panel" id="sourcePanel">
+      <div class="panel-head">
+        <div class="panel-tabs">
+          <button class="ptab active" data-src="source">Исходный материал</button>
+        </div>
+        <div class="panel-actions">
+          <button class="icon-btn" id="sourceFitBtn" title="Масштаб"><svg class="icon"><use href="#i-fit"/></svg></button>
+          <button class="icon-btn" data-menu="panel" title="Меню"><svg class="icon"><use href="#i-more"/></svg></button>
+        </div>
+      </div>
+      <div class="monitor-stage" id="sourceStage">
+        <video id="sourceVideo" playsinline preload="auto"></video>
+        <img id="sourceImage" alt="">
+        <canvas id="sourceCanvas"></canvas>
+        <div class="source-placeholder" id="sourcePlaceholder">
+          <svg class="icon"><use href="#i-film"/></svg>
+          <p>Дважды щёлкните по клипу в проекте<br>или перетащите файл сюда</p>
+          <button class="btn small primary" id="sourceImportBtn" type="button">Импорт файла</button>
+        </div>
+        <div class="safe-margins hidden" id="sourceSafe"><div class="safe-action"></div><div class="safe-title"></div></div>
+      </div>
+      <div class="scrub-wrap">
+        <div class="scrub" id="sourceScrub">
+          <div class="scrub-range" id="sourceRange"></div>
+          <div class="scrub-buffer" id="sourceBuf"></div>
+          <div class="scrub-head" id="sourceHead"></div>
+          <div class="inout-mark in" id="sourceInMark"></div>
+          <div class="inout-mark out" id="sourceOutMark"></div>
+        </div>
+      </div>
+      <div class="monitor-controls">
+        <div class="tc-row">
+          <span class="tc-label">Текущее</span>
+          <span class="timecode" id="sourceTC">00:00:00:00</span>
+          <span class="tc-label">Длительность</span>
+          <span class="timecode dim" id="sourceDur">00:00:00:00</span>
+          <span class="tc-label">Выделено</span>
+          <span class="timecode accent" id="sourceSel">00:00:00:00</span>
+        </div>
+        <div class="transport">
+          <button class="icon-btn" id="srcGoStart" title="В начало"><svg class="icon"><use href="#i-start"/></svg></button>
+          <button class="icon-btn" id="srcStepBack" title="Кадр назад (←)"><svg class="icon"><use href="#i-step-back"/></svg></button>
+          <button class="icon-btn big" id="srcPlay" title="Воспроизведение (Пробел)"><svg class="icon"><use href="#i-play"/></svg></button>
+          <button class="icon-btn" id="srcStepFwd" title="Кадр вперёд (→)"><svg class="icon"><use href="#i-step-fwd"/></svg></button>
+          <button class="icon-btn" id="srcGoEnd" title="В конец"><svg class="icon"><use href="#i-end"/></svg></button>
+          <span class="sep"></span>
+          <button class="icon-btn" id="srcLoop" title="Зациклить"><svg class="icon"><use href="#i-loop"/></svg></button>
+          <span class="sep"></span>
+          <button class="icon-btn marked" id="srcMarkIn" title="Точка входа (I)"><svg class="icon"><use href="#i-in"/></svg></button>
+          <button class="icon-btn marked" id="srcMarkOut" title="Точка выхода (O)"><svg class="icon"><use href="#i-out"/></svg></button>
+          <button class="icon-btn" id="srcGoIn" title="Перейти к входу"><svg class="icon"><use href="#i-start"/></svg></button>
+          <button class="icon-btn" id="srcGoOut" title="Перейти к выходу"><svg class="icon"><use href="#i-end"/></svg></button>
+        </div>
+        <div class="edit-row">
+          <button class="btn small" id="insertBtn" title="Вставить со сдвигом (,)"><svg class="icon"><use href="#i-insert"/></svg> Вставить</button>
+          <button class="btn small" id="overwriteBtn" title="Наложить (.)"><svg class="icon"><use href="#i-overwrite"/></svg> Наложить</button>
+          <span class="spacer"></span>
+          <label class="mini-check" title="Целевые дорожки"><input type="checkbox" id="sourceAudioOnly"> только аудио</label>
+          <button class="btn small primary" id="appendBtn" title="Добавить в конец последовательности">+ В конец</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- PROGRAM MONITOR ---------- -->
+    <section class="panel monitor-panel" id="programPanel">
+      <div class="panel-head">
+        <div class="panel-tabs">
+          <button class="ptab active" data-prog="program">Программа: <span id="seqNameShort">Последовательность 01</span></button>
+        </div>
+        <div class="panel-actions">
+          <button class="icon-btn aspect-btn" id="aspectBtn" title="Соотношение сторон"><svg class="icon"><use href="#i-fit"/></svg><span class="aspect-label">16:9</span></button>
+          <select id="programZoom" class="mini-select" title="Масштаб просмотра">
+            <option value="fit">Вписать</option><option value="25">25%</option><option value="50">50%</option>
+            <option value="75">75%</option><option value="100">100%</option><option value="150">150%</option>
+          </select>
+          <button class="icon-btn" id="safeBtn" title="Безопасные зоны"><svg class="icon"><use href="#i-grid"/></svg></button>
+          <button class="icon-btn" id="programFull" title="На весь экран"><svg class="icon"><use href="#i-fullscreen"/></svg></button>
+          <button class="icon-btn" data-menu="panel" title="Меню"><svg class="icon"><use href="#i-more"/></svg></button>
+        </div>
+      </div>
+      <div class="monitor-stage" id="programStage">
+        <div class="canvas-holder" id="canvasHolder">
+          <canvas id="programCanvas" width="1280" height="720"></canvas>
+          <div class="safe-margins hidden" id="programSafe"><div class="safe-action"></div><div class="safe-title"></div></div>
+        </div>
+        <!-- Рамка выделения живёт вне .canvas-holder, иначе её ручки обрезаются -->
+        <div class="prog-overlay hidden" id="progOverlay">
+          <div class="po-frame" id="poFrame"></div>
+          <span class="po-h tl" data-po="scale"></span>
+          <span class="po-h tr" data-po="scale"></span>
+          <span class="po-h bl" data-po="scale"></span>
+          <span class="po-h br" data-po="scale"></span>
+          <span class="po-rot" data-po="rotate" title="Поворот"></span>
+        </div>
+        <div class="monitor-badge" id="monitorBadge">Чёрный кадр</div>
+      </div>
+      <div class="scrub-wrap">
+        <div class="scrub" id="programScrub">
+          <div class="scrub-sequence" id="programSeqRange"></div>
+          <div class="scrub-markers" id="programMarkers"></div>
+          <div class="scrub-head" id="programHead"></div>
+        </div>
+      </div>
+      <div class="monitor-controls">
+        <div class="tc-row">
+          <span class="tc-label">Таймкод</span>
+          <input class="timecode edit" id="programTC" value="00:00:00:00" spellcheck="false" title="Введите таймкод и нажмите Enter">
+          <span class="tc-label">До конца</span>
+          <span class="timecode dim" id="programDur">00:00:00:00</span>
+          <span class="tc-label">Масштаб</span>
+          <span class="timecode dim" id="programRes">1920×1080 · 30 fps</span>
+        </div>
+        <div class="transport">
+          <button class="icon-btn" id="progGoStart" title="В начало (Home)"><svg class="icon"><use href="#i-start"/></svg></button>
+          <button class="icon-btn" id="progStepBack" title="Кадр назад (←)"><svg class="icon"><use href="#i-step-back"/></svg></button>
+          <button class="icon-btn" id="progPlayBack" title="Воспроизведение назад (J)"><svg class="icon ico-flip"><use href="#i-play"/></svg></button>
+          <button class="icon-btn big" id="progPlay" title="Воспроизведение (Пробел)"><svg class="icon"><use href="#i-play"/></svg></button>
+          <button class="icon-btn" id="progPlayFwd" title="Ускоренное воспроизведение (L)"><svg class="icon"><use href="#i-play"/></svg></button>
+          <button class="icon-btn" id="progStepFwd" title="Кадр вперёд (→)"><svg class="icon"><use href="#i-step-fwd"/></svg></button>
+          <button class="icon-btn" id="progGoEnd" title="В конец (End)"><svg class="icon"><use href="#i-end"/></svg></button>
+          <span class="sep"></span>
+          <button class="icon-btn" id="markInBtn" title="Установить вход (I)"><svg class="icon"><use href="#i-in"/></svg></button>
+          <button class="icon-btn" id="markOutBtn" title="Установить выход (O)"><svg class="icon"><use href="#i-out"/></svg></button>
+          <button class="icon-btn" id="addMarkerBtn" title="Добавить маркер (M)"><svg class="icon"><use href="#i-marker"/></svg></button>
+          <span class="sep"></span>
+          <button class="icon-btn" id="progMute" title="Звук предпросмотра"><svg class="icon"><use href="#i-volume"/></svg></button>
+          <button class="icon-btn" id="extractBtn" title="Изъять (X)"><svg class="icon"><use href="#i-scissors"/></svg></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- EFFECT CONTROLS ---------- -->
+    <section class="panel fx-panel" id="fxPanel">
+      <div class="panel-head">
+        <div class="panel-tabs">
+          <button class="ptab active">Настройки эффектов</button>
+        </div>
+        <div class="panel-actions">
+          <button class="icon-btn" id="fxResetBtn" title="Сбросить параметры"><svg class="icon"><use href="#i-reset"/></svg></button>
+          <button class="icon-btn" data-menu="panel" title="Меню"><svg class="icon"><use href="#i-more"/></svg></button>
+        </div>
+      </div>
+      <div class="panel-subhead fx-clip-head">
+        <span class="fx-clip-thumb" id="fxClipThumb"></span>
+        <span class="fx-clip-title" id="fxClipTitle">Клип не выбран</span>
+        <span class="fx-clip-meta" id="fxClipMeta"></span>
+      </div>
+      <div class="panel-body scroll" id="fxControls"></div>
+    </section>
+
+    <!-- ---------- SPLITTER ---------- -->
+    <div class="splitter v" id="mainSplitter"></div>
+
+    <!-- ---------- TIMELINE ---------- -->
+    <section class="panel timeline-panel" id="timelinePanel">
+      <div class="timeline-head">
+        <div class="seq-title">
+          <svg class="icon"><use href="#i-film"/></svg>
+          <span id="seqName">Последовательность 01</span>
+          <button class="icon-btn tiny" id="seqSettingsBtn" title="Настройки последовательности"><svg class="icon"><use href="#i-settings"/></svg></button>
+        </div>
+        <div class="tools" id="toolBar">
+          <button class="tool active" data-tool="select" title="Выделение (V)"><svg class="icon"><use href="#i-select"/></svg></button>
+          <button class="tool" data-tool="razor" title="Лезвие (C)"><svg class="icon"><use href="#i-razor"/></svg></button>
+          <button class="tool" data-tool="slip" title="Сдвиг содержимого (Y)"><svg class="icon"><use href="#i-sliders"/></svg></button>
+          <button class="tool" data-tool="hand" title="Рука (H)"><svg class="icon"><use href="#i-hand"/></svg></button>
+          <button class="tool" data-tool="zoom" title="Масштаб (Z)"><svg class="icon"><use href="#i-zoom-in"/></svg></button>
+          <span class="sep"></span>
+          <button class="tool" id="snapBtn" title="Привязка (S)"><svg class="icon"><use href="#i-magnet"/></svg></button>
+          <button class="tool" id="linkBtn" title="Связать аудио и видео (A)"><svg class="icon"><use href="#i-link"/></svg></button>
+          <button class="tool" id="waveBtn" title="Показать форму волны (W)"><svg class="icon"><use href="#i-wave"/></svg></button>
+          <span class="sep"></span>
+          <button class="tool kf-tool" id="kfAddBtn" title="Ключевой кадр в точке воспроизведения (Shift+K)"><svg class="icon"><use href="#i-diamond-o"/></svg></button>
+          <button class="tool" id="autoKeyBtn" title="Авто-ключ: правки в кадре сразу становятся ключевыми кадрами"><svg class="icon"><use href="#i-record"/></svg></button>
+          <span class="timecode" id="tlTC">00:00:00:00</span>
+        </div>
+        <div class="timeline-head-actions">
+          <button class="icon-btn" id="allToolsBtn" title="Все инструменты (Premiere Pro)"><svg class="icon"><use href="#i-sliders"/></svg><span class="tool-name" id="currentToolName">Selection Tool</span></button>
+          <button class="icon-btn" id="addTrackBtn" title="Добавить дорожку"><svg class="icon"><use href="#i-add-track"/></svg></button>
+          <button class="icon-btn" id="splitBtn" title="Разрезать в точке воспроизведения (Ctrl+K)"><svg class="icon"><use href="#i-scissors"/></svg></button>
+          <button class="icon-btn" id="rippleDeleteBtn" title="Удалить со сдвигом (Shift+Del)"><svg class="icon"><use href="#i-trash"/></svg></button>
+          <button class="icon-btn" id="addTextBtn" title="Новый титр"><svg class="icon"><use href="#i-text"/></svg></button>
+          <button class="icon-btn" data-menu="timeline" title="Меню последовательности"><svg class="icon"><use href="#i-more"/></svg></button>
+        </div>
+      </div>
+      <div class="timeline-body">
+        <div class="tl-scroll" id="tlScroll">
+          <div class="tl-inner" id="tlInner">
+            <div class="tl-ruler-corner" id="tlRulerCorner">
+              <span class="ruler-clock" id="tlClock">00:00:00:00</span>
+            </div>
+            <div class="tl-ruler" id="tlRuler"></div>
+            <div class="tl-tracks" id="tlTracks"></div>
+            <div class="tl-playhead" id="tlPlayhead"><div class="ph-head"></div><div class="ph-line"></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="timeline-foot">
+        <div class="foot-left">
+          <span class="foot-label">Масштаб</span>
+          <button class="icon-btn tiny" id="zoomOutBtn"><svg class="icon"><use href="#i-zoom-out"/></svg></button>
+          <input type="range" id="zoomSlider" min="4" max="320" value="40" step="1">
+          <button class="icon-btn tiny" id="zoomInBtn"><svg class="icon"><use href="#i-zoom-in"/></svg></button>
+          <button class="btn tiny" id="zoomFitBtn">Вписать</button>
+          <button class="btn tiny" id="gotoPlayheadBtn">К курсору</button>
+        </div>
+        <div class="foot-right">
+          <span id="tlStatus">Дорожек: 6 · Клипов: 0</span>
+          <span class="dot-sep">•</span>
+          <span id="tlDuration">Длительность 00:00:00:00</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ================================ MOBILE ACTIONS + NAV ================================ -->
+  <div class="mobile-rail" id="mobileRail">
+  <div class="mobile-actions" id="mobileActions">
+    <button class="mact" id="mPlay" title="Воспроизведение / пауза"><svg class="icon"><use href="#i-play"/></svg><span>Пуск</span></button>
+    <button class="mact" id="mStepBack" title="Кадр назад"><svg class="icon"><use href="#i-step-back"/></svg><span>−1к</span></button>
+    <button class="mact" id="mStepFwd" title="Кадр вперёд"><svg class="icon"><use href="#i-step-fwd"/></svg><span>+1к</span></button>
+    <button class="mact" id="mSplit" title="Разрезать"><svg class="icon"><use href="#i-scissors"/></svg><span>Резать</span></button>
+    <button class="mact" id="mTitle" title="Новый титр"><svg class="icon"><use href="#i-text"/></svg><span>Титр</span></button>
+    <button class="mact" id="mKey" title="Ключевой кадр"><svg class="icon"><use href="#i-diamond-o"/></svg><span>Ключ</span></button>
+    <button class="mact" id="mUndo" title="Отменить"><svg class="icon"><use href="#i-undo"/></svg><span>Отмена</span></button>
+    <button class="mact" id="mRedo" title="Повторить"><svg class="icon"><use href="#i-redo"/></svg><span>Повтор</span></button>
+    <button class="mact" id="mAnimate" title="Студия анимации"><svg class="icon"><use href="#i-layers"/></svg><span>Анимация</span></button>
+    <button class="mact" id="mMore" title="Ещё"><svg class="icon"><use href="#i-more"/></svg><span>Ещё</span></button>
+  </div>
+  <nav class="mobile-nav" id="mobileNav">
+    <button data-view="project"><svg class="icon"><use href="#i-folder"/></svg><span>Медиа</span></button>
+    <button data-view="monitor" class="active"><svg class="icon"><use href="#i-film"/></svg><span>Кадр</span></button>
+    <button data-action="text"><svg class="icon"><use href="#i-text"/></svg><span>Текст</span></button>
+    <button data-view="fx"><svg class="icon"><use href="#i-fx"/></svg><span>Эффекты</span></button>
+    <button data-view="timeline"><svg class="icon"><use href="#i-layers"/></svg><span>Монтаж</span></button>
+  </nav>
+  </div>
+
+  <!-- ================================ STATUS BAR ================================ -->
+  <footer class="statusbar" id="statusBar">
+    <span id="statusIcon" class="status-dot"></span>
+    <span id="statusText">Готов к работе</span>
+    <span class="spacer"></span>
+    <span id="statusHint">Перетащите видео, аудио или изображения в окно, чтобы начать</span>
+    <span class="dot-sep">•</span>
+    <button class="bridge-chip hidden" id="bridgeChip" title="Автосохранение проекта вместе с медиафайлами"><svg class="icon"><use href="#i-save"/></svg><span class="chip-text">Автосохранение</span></button>
+    <span class="dot-sep">•</span>
+    <span id="statusFPS">— fps</span>
+  </footer>
+</div>
+
+<!-- Отдельное пространство векторной анимации; создаётся локальным JavaScript. -->
+<section id="animationWorkspace" class="animation-workspace hidden" aria-label="Студия анимации"></section>
+
+<!-- ================================ START SCREEN ================================ -->
+<div id="startScreen" class="start-screen hidden"></div>
+<div id="toolPalette" class="tool-palette hidden"></div>
+<div id="commandPalette" class="cmd-palette hidden"></div>
+
+<!-- ================================ FLOATING LAYERS ================================ -->
+<div id="contextMenu" class="context-menu hidden"></div>
+<div id="modalRoot" class="modal-root hidden"></div>
+<div id="toastRoot" class="toast-root"></div>
+<div id="dragGhost" class="drag-ghost hidden"></div>
+<input type="file" id="fileInput" multiple hidden accept="video/*,audio/*,image/*,.mkv,.mov,.m4v,.mp4,.webm,.mp3,.wav,.ogg,.flac,.aac,.m4a,.jpg,.jpeg,.png,.gif,.webp,.avif,.svg">
+<input type="file" id="projectInput" hidden accept=".json,.js,.txt,application/json">
+
+<!--INLINE_JS-->
+</body>
+</html>
